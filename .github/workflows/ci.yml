@@ -19,8 +19,18 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/determinate-nix-action@v3
 
-      - name: Flake eval
-        run: nix flake check --no-build --show-trace
+      - name: Flake eval + lint
+        run: nix flake check --show-trace
 
-      - name: Formatting
-        run: nix fmt -- -c .
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

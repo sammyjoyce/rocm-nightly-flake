@@ -1,0 +1,21 @@
+repos:
+  - repo: local
+    hooks:
+      - id: alejandra
+        name: Nix formatting (alejandra)
+        entry: alejandra
+        language: system
+        files: '\.nix$'
+
+      - id: statix
+        name: Nix lint (statix)
+        entry: statix check
+        language: system
+        files: '\.nix$'
+        pass_filenames: false
+
+      - id: deadnix
+        name: Dead Nix code (deadnix)
+        entry: deadnix --fail
+        language: system
+        files: '\.nix$'

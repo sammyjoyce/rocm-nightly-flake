@@ -16,7 +16,7 @@
     srcHash = "sha256-6pkPZ5vD7Q9oQ3797cwA30y9/GNAku39BQiqko59j7o=";
 
     mkRocmNightly = pkgs: let
-      lib = pkgs.lib;
+      inherit (pkgs) lib;
       pythonEnv = pkgs.python3.withPackages (ps: [ps.pyelftools]);
       gccLibPath = lib.makeLibraryPath [pkgs.stdenv.cc.cc.lib];
     in
@@ -293,8 +293,37 @@
           };
         };
 
+        checks = {
+          formatting =
+            pkgs.runCommand "check-formatting" {
+              nativeBuildInputs = [pkgs.alejandra];
+            } ''
+              alejandra -c ${self}
+              touch $out
+            '';
+          statix =
+            pkgs.runCommand "check-statix" {
+              nativeBuildInputs = [pkgs.statix];
+            } ''
+              statix check ${self}
+              touch $out
+            '';
+          deadnix =
+            pkgs.runCommand "check-deadnix" {
+              nativeBuildInputs = [pkgs.deadnix];
+            } ''
+              deadnix --fail ${self}
+              touch $out
+            '';
+        };
+
         devShells.default = pkgs.mkShell {
-          packages = [rocmPkg];
+          packages = [
+            rocmPkg
+            pkgs.statix
+            pkgs.deadnix
+            pkgs.pre-commit
+          ];
           shellHook = ''
             export ROCM_PATH=${rocmPkg}/opt/rocm
             export ROCM_HOME=$ROCM_PATH
@@ -302,6 +331,10 @@
             export LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:${gccLibPath}:$LD_LIBRARY_PATH
 
             echo "ROCm nightly (${version}, ${gpuarch}) available at: $ROCM_PATH" >&2
+
+            if [ -f .pre-commit-config.yaml ] && command -v pre-commit &>/dev/null; then
+              pre-commit install -q 2>/dev/null || true
+            fi
           '';
         };
 
@@ -350,23 +383,25 @@
 
             gccLibPath = lib.makeLibraryPath [pkgs.stdenv.cc.cc.lib];
           in {
-            environment.systemPackages = [pkg];
+            environment = {
+              systemPackages = [pkg];
+              etc = {
+                "ld.so.conf.d/rocm-nightly-${gpuarch}.conf".text = ''
+                  /opt/rocm/lib
+                  /opt/rocm/lib64
+                '';
+                "profile.d/rocm-nightly-${gpuarch}.sh".text = ''
+                  export ROCM_PATH=/opt/rocm
+                  export ROCM_HOME=/opt/rocm
+                  export HIP_PATH=/opt/rocm
+                  export LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:${gccLibPath}:$LD_LIBRARY_PATH
+                '';
+              };
+            };
 
             systemd.tmpfiles.rules = [
               "L+ /opt/rocm - - - - ${pkg}/opt/rocm"
             ];
-
-            environment.etc."ld.so.conf.d/rocm-nightly-${gpuarch}.conf".text = ''
-              /opt/rocm/lib
-              /opt/rocm/lib64
-            '';
-
-            environment.etc."profile.d/rocm-nightly-${gpuarch}.sh".text = ''
-              export ROCM_PATH=/opt/rocm
-              export ROCM_HOME=/opt/rocm
-              export HIP_PATH=/opt/rocm
-              export LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:${gccLibPath}:$LD_LIBRARY_PATH
-            '';
           }
         );
       };
