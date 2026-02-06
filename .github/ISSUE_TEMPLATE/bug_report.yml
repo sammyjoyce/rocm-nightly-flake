@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a problem with the flake/package/module
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue.
+
+        Please include as much detail as possible. ROCm + Nix issues are often environment-specific.
+
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: "Distro / NixOS version (or non-NixOS)"
+      placeholder: "NixOS 25.05 (or Arch, Ubuntu, etc.)"
+    validations:
+      required: true
+
+  - type: input
+    id: nix_version
+    attributes:
+      label: Nix version
+      placeholder: "nix (Nix) 2.33.1"
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU + gfx arch
+      description: "GPU model and reported gfx arch (if known)"
+      placeholder: "Radeon 8060S (gfx1151)"
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: "What command did you run?"
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: "Paste relevant output. Use `nix log` if applicable."
+      render: shell

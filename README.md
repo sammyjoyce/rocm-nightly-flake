@@ -1,18 +1,21 @@
 # ROCm Nightly Flake (gfx1151)
 
-Nix flake packaging of the [ROCm nightly monolithic tarball](https://rocm.nightlies.amd.com) for AMD Strix Halo (Radeon 8060S, RDNA 3.5, gfx1151).
+[![CI](https://github.com/sammyjoyce/rocm-nightly-flake/actions/workflows/ci.yml/badge.svg)](https://github.com/sammyjoyce/rocm-nightly-flake/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/sammyjoyce/rocm-nightly-flake)](./LICENSE)
+
+Nix flake packaging of the [ROCm nightly monolithic tarball](https://rocm.nightlies.amd.com) for AMD Strix Halo (Radeon 8060S, RDNA 3.5, `gfx1151`).
 
 ## Quick start
 
 ```bash
 # Test GPU detection
-nix run github:sammy/rocm-nightly-flake
+nix run github:sammyjoyce/rocm-nightly-flake
 
-# Enter dev shell with ROCm on PATH
-nix develop github:sammy/rocm-nightly-flake
+# Enter dev shell with ROCm env vars set
+nix develop github:sammyjoyce/rocm-nightly-flake
 
-# Build the package
-nix build github:sammy/rocm-nightly-flake
+# Build the package (downloads a large tarball)
+nix build github:sammyjoyce/rocm-nightly-flake
 ```
 
 ## NixOS module
@@ -20,7 +23,7 @@ nix build github:sammy/rocm-nightly-flake
 ```nix
 # flake.nix
 {
-  inputs.rocm-nightly.url = "github:sammy/rocm-nightly-flake";
+  inputs.rocm-nightly.url = "github:sammyjoyce/rocm-nightly-flake";
 
   outputs = { self, nixpkgs, rocm-nightly, ... }: {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
@@ -45,7 +48,7 @@ The module:
 
 ```nix
 {
-  inputs.rocm-nightly.url = "github:sammy/rocm-nightly-flake";
+  inputs.rocm-nightly.url = "github:sammyjoyce/rocm-nightly-flake";
 
   outputs = { self, nixpkgs, rocm-nightly, ... }: {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
@@ -68,7 +71,10 @@ This repo includes an updater app:
 # Pick the latest gfx1151 nightly from https://rocm.nightlies.amd.com/tarball/ and rewrite flake.nix
 nix run .#update
 
-# Or pin an explicit version
+# Or run from GitHub
+nix run github:sammyjoyce/rocm-nightly-flake#update
+
+# Pin an explicit version
 nix run .#update -- --version 7.12.0a20260205
 
 # Preview without modifying files
@@ -95,5 +101,10 @@ nix fmt
 - ROCm libraries (rocBLAS, hipBLAS, hipBLASLt, MIOpen, rocFFT, etc.)
 - ROCm tools (rocminfo, rocm-smi, rocprof, hipcc)
 - LLVM/Clang toolchain with AMDGPU backend
-- 679 wrapped binaries with proper `ROCM_PATH` and `LD_LIBRARY_PATH`
+- Wrapped binaries with `ROCM_PATH` and `LD_LIBRARY_PATH`
 - Total size: ~13 GB
+
+## License
+
+- Repo code: MIT (see [`LICENSE`](./LICENSE))
+- Upstream ROCm nightly tarballs: governed by AMD's licensing/terms (redistributable but not open source)
