@@ -19,10 +19,10 @@
       inherit (pkgs) lib;
       pythonEnv = pkgs.python3.withPackages (ps: [ps.pyelftools]);
       gccLibPath = lib.makeLibraryPath [pkgs.stdenv.cc.cc.lib];
-    in
-      pkgs.stdenvNoCC.mkDerivation rec {
-        pname = "rocm-nightly-${gpuarch}-bin";
-        inherit version;
+      pname = "rocm-nightly-${gpuarch}-bin";
+
+      rocmDrv = pkgs.stdenvNoCC.mkDerivation {
+        inherit pname version;
 
         src = pkgs.fetchurl {
           url = "https://rocm.nightlies.amd.com/tarball/therock-dist-linux-${gpuarch}-${version}.tar.gz";
@@ -95,6 +95,52 @@
                       runHook postInstall
         '';
 
+        # Tests that validate the built output (require downloading the tarball).
+        # Run manually: nix build .#packages.x86_64-linux.default.tests.output-structure
+        passthru.tests = {
+          output-structure = pkgs.runCommand "test-rocm-output-structure" {} ''
+            pkg="${rocmDrv}"
+
+            echo "=== Output structure tests ==="
+
+            echo "Checking opt/rocm directory..."
+            test -d "$pkg/opt/rocm"
+
+            echo "Checking bin directory..."
+            test -d "$pkg/bin"
+
+            echo "Checking nix-support directory..."
+            test -d "$pkg/nix-support"
+            test -f "$pkg/nix-support/setup-hook"
+
+            echo "Checking setup-hook content..."
+            grep -q 'ROCM_PATH=' "$pkg/nix-support/setup-hook"
+            grep -q 'CMAKE_PREFIX_PATH' "$pkg/nix-support/setup-hook"
+            grep -q 'HIP_PATH=' "$pkg/nix-support/setup-hook"
+
+            echo "Checking wrapped binaries exist..."
+            count=0
+            for f in "$pkg/bin/"*; do
+              if [ -f "$f" ] && [ -x "$f" ]; then
+                count=$((count + 1))
+              fi
+            done
+            test "$count" -gt 0 || { echo "FAIL: no executables in bin/"; exit 1; }
+            echo "Found $count wrapped executables"
+
+            echo "Checking amdgcn symlink..."
+            if [ -d "$pkg/opt/rocm/lib/llvm/amdgcn" ]; then
+              test -L "$pkg/opt/rocm/amdgcn" || { echo "FAIL: amdgcn symlink missing"; exit 1; }
+            fi
+
+            echo "Checking license directory..."
+            test -d "$pkg/share/licenses"
+
+            echo "=== All output structure tests passed ==="
+            touch $out
+          '';
+        };
+
         meta = with lib; {
           description = "AMD ROCm Nightly Release (${gpuarch}) - Monolithic install";
           homepage = "https://rocm.nightlies.amd.com";
@@ -106,6 +152,8 @@
           mainProgram = "rocminfo";
         };
       };
+    in
+      rocmDrv;
   in
     flake-utils.lib.eachSystem ["x86_64-linux"] (
       system: let
@@ -315,6 +363,37 @@
               deadnix --fail ${self}
               touch $out
             '';
+
+          # Validates the NixOS module evaluates without errors (no tarball download).
+          module-eval = let
+            testConfig = nixpkgs.lib.nixosSystem {
+              inherit system;
+              modules = [
+                self.nixosModules.default
+                {
+                  nixpkgs.config.allowUnfree = true;
+                  boot.loader.grub.enable = false;
+                  fileSystems."/".device = "none";
+                  system.stateVersion = "24.11";
+                  services.rocmNightlyGfx1151.enable = true;
+                }
+              ];
+            };
+          in
+            pkgs.runCommand "check-module-eval" {} ''
+              test "${builtins.toString testConfig.config.services.rocmNightlyGfx1151.enable}" = "1"
+              echo "NixOS module evaluates successfully"
+              touch $out
+            '';
+
+          # Validates derivation metadata at eval time (no tarball download).
+          flake-meta = pkgs.runCommand "check-flake-meta" {} ''
+            test "${rocmPkg.pname}" = "rocm-nightly-${gpuarch}-bin"
+            test "${rocmPkg.version}" = "${version}"
+            test "${rocmPkg.meta.mainProgram}" = "rocminfo"
+            echo "Flake metadata validated"
+            touch $out
+          '';
         };
 
         devShells.default = pkgs.mkShell {
@@ -333,7 +412,9 @@
             echo "ROCm nightly (${version}, ${gpuarch}) available at: $ROCM_PATH" >&2
 
             if [ -f .pre-commit-config.yaml ] && command -v pre-commit &>/dev/null; then
-              pre-commit install -q 2>/dev/null || true
+              if [ ! -f .git/hooks/pre-commit ] || ! grep -q "pre-commit" .git/hooks/pre-commit 2>/dev/null; then
+                pre-commit install -q || true
+              fi
             fi
           '';
         };

@@ -12,9 +12,10 @@ module, and updater script. See [ARCHITECTURE.md](./ARCHITECTURE.md) for details
 flake.nix              All Nix code: derivation, overlay, NixOS module, updater, devShell
 flake.lock             Pinned nixpkgs + flake-utils
 ARCHITECTURE.md        Internal design and data flow
+TROUBLESHOOTING.md     Runbooks for common issues
 README.md              User-facing docs
 CONTRIBUTING.md        Contributor guide
-.github/               CI, Dependabot, issue/PR templates, CODEOWNERS
+.github/               CI, Dependabot, issue/PR templates, CODEOWNERS, labels
 .pre-commit-config.yaml  Local hooks: alejandra, statix, deadnix
 .editorconfig          Editor settings
 ```
@@ -71,10 +72,12 @@ automatically.
 
 ### Testing
 
-There are no unit tests (this is a packaging flake). Validation is:
-1. `nix flake check --no-build` (evaluation)
-2. `nix flake check` (lint checks)
-3. Manual: `nix run .` to verify `rocminfo` detects the GPU
+Validation levels (from fastest to most thorough):
+
+1. `nix flake check --no-build` - Evaluate all derivations and module config (no downloads, seconds)
+2. `nix flake check` - Evaluate + run lint checks + module-eval + flake-meta (no tarball, seconds)
+3. `nix build .#packages.x86_64-linux.default.tests.output-structure` - Validate built output directories, wrappers, setup-hook (requires tarball, ~13 GB download)
+4. `nix run .` - Run `rocminfo` to verify GPU detection (requires tarball + GPU)
 
 ### Releases
 

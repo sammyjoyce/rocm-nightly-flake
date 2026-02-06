@@ -14,23 +14,54 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install Nix
         uses: DeterminateSystems/determinate-nix-action@v3
 
-      - name: Flake eval + lint
+      # Runs formatting (alejandra), lint (statix), dead code (deadnix),
+      # module-eval, and flake-meta checks.
+      # Does NOT download or build the ROCm tarball (~13 GB).
+      - name: Flake eval + lint + tests
         run: nix flake check --show-trace
+
+      - name: AGENTS.md freshness
+        run: |
+          # If flake.nix changed on this branch but AGENTS.md didn't, warn.
+          base="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          if git diff --name-only "$base" HEAD 2>/dev/null | grep -q '^flake\.nix$'; then
+            if ! git diff --name-only "$base" HEAD 2>/dev/null | grep -q '^AGENTS\.md$'; then
+              echo "::warning file=AGENTS.md::flake.nix changed but AGENTS.md was not updated. Please review if AGENTS.md needs updating."
+            fi
+          fi
 
   security:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@v3
+
       - name: Secret scanning (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nix run nixpkgs#gitleaks -- detect --source . --verbose
+
+      - name: Technical debt tracking (TODO/FIXME)
+        run: |
+          echo "## Technical Debt Report" >> "$GITHUB_STEP_SUMMARY"
+          count=0
+          while IFS= read -r line; do
+            echo "- $line" >> "$GITHUB_STEP_SUMMARY"
+            count=$((count + 1))
+          done < <(grep -rn 'TODO\|FIXME\|HACK\|XXX' --include='*.nix' --include='*.md' --include='*.yml' --include='*.yaml' . \
+            --exclude-dir=.git --exclude='task_plan.md' --exclude='progress.md' --exclude='findings.md' || true)
+          if [ "$count" -eq 0 ]; then
+            echo "- None found" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo ""
+          echo "Found $count debt markers"

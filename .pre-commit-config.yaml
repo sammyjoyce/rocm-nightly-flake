@@ -19,3 +19,4 @@ repos:
         entry: deadnix --fail
         language: system
         files: '\.nix$'
+        pass_filenames: false

@@ -104,6 +104,10 @@ nix fmt
 - Wrapped binaries with `ROCM_PATH` and `LD_LIBRARY_PATH`
 - Total size: ~13 GB
 
+## Troubleshooting
+
+See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for solutions to common issues (GPU detection, download problems, binary errors, NixOS module configuration).
+
 ## License
 
 - Repo code: MIT (see [`LICENSE`](./LICENSE))

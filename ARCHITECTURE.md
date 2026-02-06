@@ -59,7 +59,7 @@ Build phases that would break pre-built binaries are disabled (`dontStrip`,
 | `packages.update`           | Shell script to bump `version` + `srcHash` in flake.nix  |
 | `apps.default`              | Runs `rocminfo` (quick GPU detection test)               |
 | `apps.update`               | Runs the updater script                                  |
-| `checks.*`                  | Formatting (alejandra), lint (statix), dead code (deadnix) |
+| `checks.*`                  | Formatting, lint, dead code, module-eval, flake-meta       |
 | `devShells.default`         | Shell with ROCm on `PATH` + dev tools                    |
 | `formatter`                 | alejandra wrapper                                        |
 | `overlays.default`          | Adds `rocm-nightly` to nixpkgs                           |
@@ -81,13 +81,25 @@ When `services.rocmNightlyGfx1151.enable = true`:
 for the configured `gpuarch`, prefetches it to compute the SRI hash, and
 rewrites `version` + `srcHash` in `flake.nix` using a Python regex replacement.
 
+### `passthru.tests`
+
+The ROCm derivation includes `passthru.tests.output-structure` which validates the
+built output: directory layout (`bin/`, `opt/rocm/`, `nix-support/`), setup-hook
+content, wrapped binaries, amdgcn symlink, and license directory. Requires the
+package to be built first (13 GB download).
+
+```bash
+nix build .#packages.x86_64-linux.default.tests.output-structure
+```
+
 ## CI
 
-| Workflow               | Trigger               | What it does                          |
-|------------------------|-----------------------|---------------------------------------|
-| `ci.yml`               | push/PR to main       | Flake eval + lint checks + gitleaks   |
-| `update-flake-lock.yml`| Weekly cron           | Updates `flake.lock` via PR           |
-| `release.yml`          | `v*` tag push         | Creates GitHub release with notes     |
+| Workflow               | Trigger               | What it does                                      |
+|------------------------|-----------------------|---------------------------------------------------|
+| `ci.yml` (checks)     | push/PR to main       | Flake eval + lint + module-eval + AGENTS.md check  |
+| `ci.yml` (security)   | push/PR to main       | gitleaks secret scanning + TODO/FIXME tracking     |
+| `update-flake-lock.yml`| Weekly cron           | Updates `flake.lock` via PR                        |
+| `release.yml`          | `v*` tag push         | Creates GitHub release with notes                  |
 
 ## Design decisions
 
