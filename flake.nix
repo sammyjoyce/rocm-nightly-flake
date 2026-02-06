@@ -16,13 +16,13 @@
     srcHash = "sha256-6pkPZ5vD7Q9oQ3797cwA30y9/GNAku39BQiqko59j7o=";
 
     mkRocmNightly = pkgs: let
-      lib = pkgs.lib;
+      inherit (pkgs) lib;
       pythonEnv = pkgs.python3.withPackages (ps: [ps.pyelftools]);
       gccLibPath = lib.makeLibraryPath [pkgs.stdenv.cc.cc.lib];
-    in
-      pkgs.stdenvNoCC.mkDerivation rec {
-        pname = "rocm-nightly-${gpuarch}-bin";
-        inherit version;
+      pname = "rocm-nightly-${gpuarch}-bin";
+
+      rocmDrv = pkgs.stdenvNoCC.mkDerivation {
+        inherit pname version;
 
         src = pkgs.fetchurl {
           url = "https://rocm.nightlies.amd.com/tarball/therock-dist-linux-${gpuarch}-${version}.tar.gz";
@@ -95,6 +95,52 @@
                       runHook postInstall
         '';
 
+        # Tests that validate the built output (require downloading the tarball).
+        # Run manually: nix build .#packages.x86_64-linux.default.tests.output-structure
+        passthru.tests = {
+          output-structure = pkgs.runCommand "test-rocm-output-structure" {} ''
+            pkg="${rocmDrv}"
+
+            echo "=== Output structure tests ==="
+
+            echo "Checking opt/rocm directory..."
+            test -d "$pkg/opt/rocm"
+
+            echo "Checking bin directory..."
+            test -d "$pkg/bin"
+
+            echo "Checking nix-support directory..."
+            test -d "$pkg/nix-support"
+            test -f "$pkg/nix-support/setup-hook"
+
+            echo "Checking setup-hook content..."
+            grep -q 'ROCM_PATH=' "$pkg/nix-support/setup-hook"
+            grep -q 'CMAKE_PREFIX_PATH' "$pkg/nix-support/setup-hook"
+            grep -q 'HIP_PATH=' "$pkg/nix-support/setup-hook"
+
+            echo "Checking wrapped binaries exist..."
+            count=0
+            for f in "$pkg/bin/"*; do
+              if [ -f "$f" ] && [ -x "$f" ]; then
+                count=$((count + 1))
+              fi
+            done
+            test "$count" -gt 0 || { echo "FAIL: no executables in bin/"; exit 1; }
+            echo "Found $count wrapped executables"
+
+            echo "Checking amdgcn symlink..."
+            if [ -d "$pkg/opt/rocm/lib/llvm/amdgcn" ]; then
+              test -L "$pkg/opt/rocm/amdgcn" || { echo "FAIL: amdgcn symlink missing"; exit 1; }
+            fi
+
+            echo "Checking license directory..."
+            test -d "$pkg/share/licenses"
+
+            echo "=== All output structure tests passed ==="
+            touch $out
+          '';
+        };
+
         meta = with lib; {
           description = "AMD ROCm Nightly Release (${gpuarch}) - Monolithic install";
           homepage = "https://rocm.nightlies.amd.com";
@@ -106,6 +152,8 @@
           mainProgram = "rocminfo";
         };
       };
+    in
+      rocmDrv;
   in
     flake-utils.lib.eachSystem ["x86_64-linux"] (
       system: let
@@ -293,8 +341,68 @@
           };
         };
 
+        checks = {
+          formatting =
+            pkgs.runCommand "check-formatting" {
+              nativeBuildInputs = [pkgs.alejandra];
+            } ''
+              alejandra -c ${self}
+              touch $out
+            '';
+          statix =
+            pkgs.runCommand "check-statix" {
+              nativeBuildInputs = [pkgs.statix];
+            } ''
+              statix check ${self}
+              touch $out
+            '';
+          deadnix =
+            pkgs.runCommand "check-deadnix" {
+              nativeBuildInputs = [pkgs.deadnix];
+            } ''
+              deadnix --fail ${self}
+              touch $out
+            '';
+
+          # Validates the NixOS module evaluates without errors (no tarball download).
+          module-eval = let
+            testConfig = nixpkgs.lib.nixosSystem {
+              inherit system;
+              modules = [
+                self.nixosModules.default
+                {
+                  nixpkgs.config.allowUnfree = true;
+                  boot.loader.grub.enable = false;
+                  fileSystems."/".device = "none";
+                  system.stateVersion = "24.11";
+                  services.rocmNightlyGfx1151.enable = true;
+                }
+              ];
+            };
+          in
+            pkgs.runCommand "check-module-eval" {} ''
+              test "${builtins.toString testConfig.config.services.rocmNightlyGfx1151.enable}" = "1"
+              echo "NixOS module evaluates successfully"
+              touch $out
+            '';
+
+          # Validates derivation metadata at eval time (no tarball download).
+          flake-meta = pkgs.runCommand "check-flake-meta" {} ''
+            test "${rocmPkg.pname}" = "rocm-nightly-${gpuarch}-bin"
+            test "${rocmPkg.version}" = "${version}"
+            test "${rocmPkg.meta.mainProgram}" = "rocminfo"
+            echo "Flake metadata validated"
+            touch $out
+          '';
+        };
+
         devShells.default = pkgs.mkShell {
-          packages = [rocmPkg];
+          packages = [
+            rocmPkg
+            pkgs.statix
+            pkgs.deadnix
+            pkgs.pre-commit
+          ];
           shellHook = ''
             export ROCM_PATH=${rocmPkg}/opt/rocm
             export ROCM_HOME=$ROCM_PATH
@@ -302,6 +410,12 @@
             export LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:${gccLibPath}:$LD_LIBRARY_PATH
 
             echo "ROCm nightly (${version}, ${gpuarch}) available at: $ROCM_PATH" >&2
+
+            if [ -f .pre-commit-config.yaml ] && command -v pre-commit &>/dev/null; then
+              if [ ! -f .git/hooks/pre-commit ] || ! grep -q "pre-commit" .git/hooks/pre-commit 2>/dev/null; then
+                pre-commit install -q || true
+              fi
+            fi
           '';
         };
 
@@ -350,23 +464,25 @@
 
             gccLibPath = lib.makeLibraryPath [pkgs.stdenv.cc.cc.lib];
           in {
-            environment.systemPackages = [pkg];
+            environment = {
+              systemPackages = [pkg];
+              etc = {
+                "ld.so.conf.d/rocm-nightly-${gpuarch}.conf".text = ''
+                  /opt/rocm/lib
+                  /opt/rocm/lib64
+                '';
+                "profile.d/rocm-nightly-${gpuarch}.sh".text = ''
+                  export ROCM_PATH=/opt/rocm
+                  export ROCM_HOME=/opt/rocm
+                  export HIP_PATH=/opt/rocm
+                  export LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:${gccLibPath}:$LD_LIBRARY_PATH
+                '';
+              };
+            };
 
             systemd.tmpfiles.rules = [
               "L+ /opt/rocm - - - - ${pkg}/opt/rocm"
             ];
-
-            environment.etc."ld.so.conf.d/rocm-nightly-${gpuarch}.conf".text = ''
-              /opt/rocm/lib
-              /opt/rocm/lib64
-            '';
-
-            environment.etc."profile.d/rocm-nightly-${gpuarch}.sh".text = ''
-              export ROCM_PATH=/opt/rocm
-              export ROCM_HOME=/opt/rocm
-              export HIP_PATH=/opt/rocm
-              export LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:${gccLibPath}:$LD_LIBRARY_PATH
-            '';
           }
         );
       };
