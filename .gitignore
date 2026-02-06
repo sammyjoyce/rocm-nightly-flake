@@ -1,0 +1,15 @@
+# Nix build outputs
+/result
+/result-*
+
+# direnv
+/.direnv/
+/.envrc
+
+# Editors
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
