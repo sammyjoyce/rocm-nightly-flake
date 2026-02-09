@@ -46,6 +46,7 @@
 
         nativeBuildInputs = [
           pkgs.makeWrapper
+          pkgs.file
           pythonEnv
         ];
 
@@ -73,12 +74,32 @@
                       if [ -d "$out/opt/rocm/bin" ]; then
                         for prog in "$out/opt/rocm/bin/"*; do
                           if [ -f "$prog" ] && [ -x "$prog" ]; then
-                            makeWrapper "$prog" "$out/bin/$(basename "$prog")" \
-                              --set-default ROCM_PATH "$out/opt/rocm" \
-                              --set-default ROCM_HOME "$out/opt/rocm" \
-                              --set-default HIP_PATH "$out/opt/rocm" \
-                              --prefix PATH : "$out/opt/rocm/bin" \
-                              --prefix LD_LIBRARY_PATH : "$out/opt/rocm/lib:$out/opt/rocm/lib64:${gccLibPath}"
+                            progName="$(basename "$prog")"
+
+                            # The monolithic ROCm tarball ships dynamically linked ELF binaries that
+                            # often use a generic Linux interpreter path (for example /lib64/ld-linux-x86-64.so.2).
+                            # On NixOS this fails with the stub-ld message. Avoid patching the ELF (the tarball
+                            # breaks under Nix fixups) by wrapping ELF executables via Nix's dynamic linker.
+                            kind="$(file -b "$prog" || true)"
+                            case "$kind" in
+                              ELF*)
+                                makeWrapper "${pkgs.stdenv.cc.bintools.dynamicLinker}" "$out/bin/$progName" \
+                                  --add-flags "$prog" \
+                                  --set-default ROCM_PATH "$out/opt/rocm" \
+                                  --set-default ROCM_HOME "$out/opt/rocm" \
+                                  --set-default HIP_PATH "$out/opt/rocm" \
+                                  --prefix PATH : "$out/opt/rocm/bin" \
+                                  --prefix LD_LIBRARY_PATH : "$out/opt/rocm/lib:$out/opt/rocm/lib64:${gccLibPath}"
+                                ;;
+                              *)
+                                makeWrapper "$prog" "$out/bin/$progName" \
+                                  --set-default ROCM_PATH "$out/opt/rocm" \
+                                  --set-default ROCM_HOME "$out/opt/rocm" \
+                                  --set-default HIP_PATH "$out/opt/rocm" \
+                                  --prefix PATH : "$out/opt/rocm/bin" \
+                                  --prefix LD_LIBRARY_PATH : "$out/opt/rocm/lib:$out/opt/rocm/lib64:${gccLibPath}"
+                                ;;
+                            esac
                           fi
                         done
                       fi
