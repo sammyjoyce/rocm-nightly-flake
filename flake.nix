@@ -484,6 +484,15 @@
           in {
             environment = {
               systemPackages = [pkg];
+
+              # Ensure the core ROCm paths are available in all shells (including fish)
+              # and in non-interactive contexts that do not source /etc/profile.d.
+              variables = {
+                ROCM_PATH = "/opt/rocm";
+                ROCM_HOME = "/opt/rocm";
+                HIP_PATH = "/opt/rocm";
+              };
+
               etc = {
                 "ld.so.conf.d/rocm-nightly-${gpuarch}.conf".text = ''
                   /opt/rocm/lib
