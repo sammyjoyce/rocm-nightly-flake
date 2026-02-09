@@ -43,13 +43,15 @@ Uses `stdenvNoCC` (no compiler needed). Key phases:
 
 1. **unpack** - Extracts the tarbomb into a `source/` directory
 2. **install** - Copies tree to `$out/opt/rocm`, creates `amdgcn` symlink,
-   patches shebangs, wraps every executable in `bin/` with `ROCM_PATH`,
-   `LD_LIBRARY_PATH`, and `PATH`
+   patches shebangs, patches ELF interpreters (PT_INTERP) to Nix's dynamic linker
+   (NixOS compatibility), and wraps executables in `opt/rocm/bin/` into `$out/bin`
+   with `ROCM_PATH`, `LD_LIBRARY_PATH`, and `PATH`
 3. **setup-hook** - Writes `nix-support/setup-hook` so downstream derivations
    that use this as a `buildInput` get `ROCM_PATH` and `CMAKE_PREFIX_PATH`
 
 Build phases that would break pre-built binaries are disabled (`dontStrip`,
-`dontPatchELF`, `dontFixup`).
+`dontPatchELF`, `dontFixup`). We only patch PT_INTERP ourselves (no
+RPATH/RUNPATH rewriting).
 
 ### Flake outputs
 
@@ -106,9 +108,10 @@ nix build .#packages.x86_64-linux.default.tests.output-structure
 - **No source build.** AMD publishes pre-built tarballs; compiling ROCm from
   source is a multi-hour ordeal requiring dozens of repos. Repackaging the
   tarball is the practical choice.
-- **`dontPatchELF` / `dontFixup`.** The tarball's binaries have complex RPATH
-  structures that break under Nix's standard fixup. Wrappers inject paths at
-  runtime instead.
+- **`dontPatchELF` / `dontFixup`.** The tarball's binaries have complex
+  RPATH/RUNPATH structures that break under Nix's standard fixup. We disable the
+  standard fixup and only patch PT_INTERP (interpreter) for NixOS compatibility.
+  Wrappers inject environment (ROCM_PATH/LD_LIBRARY_PATH/PATH) at runtime.
 - **Single gpuarch.** The tarball is architecture-specific. Supporting multiple
   architectures means multiple tarballs with different hashes.
 - **CI avoids builds.** The tarball is ~13 GB. CI only evaluates derivations

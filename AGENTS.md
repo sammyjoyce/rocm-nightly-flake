@@ -62,7 +62,7 @@ nix flake update
 - **Never add a CI step that downloads or builds the ROCm tarball.** It is ~13 GB. CI must stay lightweight (eval + lint only).
 - **Single file.** All Nix code lives in `flake.nix`. Do not split into multiple files unless it grows past ~500 lines.
 - **No source compilation.** The derivation repackages pre-built binaries. Do not add build phases.
-- **`dontStrip`, `dontPatchELF`, `dontFixup` are intentional.** The tarball binaries break under Nix's standard fixup. Wrappers handle paths at runtime.
+- **`dontStrip`, `dontPatchELF`, `dontFixup` are intentional.** Nix's standard ELF fixups (especially RPATH/RUNPATH rewriting) can break the tarball. We only patch the ELF interpreter (PT_INTERP) to Nix's dynamic linker so executables run on NixOS; wrappers still inject env at runtime.
 
 ### Version updates
 
