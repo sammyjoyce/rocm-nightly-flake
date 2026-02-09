@@ -46,7 +46,7 @@
 
         nativeBuildInputs = [
           pkgs.makeWrapper
-          pkgs.file
+          pkgs.patchelf
           pythonEnv
         ];
 
@@ -63,6 +63,22 @@
 
                       patchShebangs "$out/opt/rocm"
 
+                      # The monolithic ROCm tarball ships many dynamically linked ELF executables with a
+                      # generic Linux interpreter path (for example /lib64/ld-linux-x86-64.so.2). On NixOS
+                      # that fails with the stub-ld message.
+                      #
+                      # We intentionally patch ONLY the interpreter (PT_INTERP) to Nix's dynamic linker and
+                      # do not touch RPATH/RUNPATH. The upstream tarball relies on its own $ORIGIN layout,
+                      # and Nix's standard ELF fixups can break it.
+                      interp="${pkgs.stdenv.cc.bintools.dynamicLinker}"
+                      echo "Patching ELF interpreters under $out/opt/rocm -> $interp" >&2
+                      while IFS= read -r -d $'\0' f; do
+                        cur="$(patchelf --print-interpreter "$f" 2>/dev/null || true)"
+                        if [ -n "$cur" ] && [ "$cur" != "$interp" ]; then
+                          patchelf --set-interpreter "$interp" "$f"
+                        fi
+                      done < <(find "$out/opt/rocm" -type f -perm -0100 -print0)
+
                       mkdir -p "$out/share/licenses/${pname}"
                       if [ -f "$out/opt/rocm/LICENSE" ]; then
                         ln -s "$out/opt/rocm/LICENSE" "$out/share/licenses/${pname}/LICENSE"
@@ -75,31 +91,12 @@
                         for prog in "$out/opt/rocm/bin/"*; do
                           if [ -f "$prog" ] && [ -x "$prog" ]; then
                             progName="$(basename "$prog")"
-
-                            # The monolithic ROCm tarball ships dynamically linked ELF binaries that
-                            # often use a generic Linux interpreter path (for example /lib64/ld-linux-x86-64.so.2).
-                            # On NixOS this fails with the stub-ld message. Avoid patching the ELF (the tarball
-                            # breaks under Nix fixups) by wrapping ELF executables via Nix's dynamic linker.
-                            kind="$(file -b "$prog" || true)"
-                            case "$kind" in
-                              ELF*)
-                                makeWrapper "${pkgs.stdenv.cc.bintools.dynamicLinker}" "$out/bin/$progName" \
-                                  --add-flags "$prog" \
-                                  --set-default ROCM_PATH "$out/opt/rocm" \
-                                  --set-default ROCM_HOME "$out/opt/rocm" \
-                                  --set-default HIP_PATH "$out/opt/rocm" \
-                                  --prefix PATH : "$out/opt/rocm/bin" \
-                                  --prefix LD_LIBRARY_PATH : "$out/opt/rocm/lib:$out/opt/rocm/lib64:${gccLibPath}"
-                                ;;
-                              *)
-                                makeWrapper "$prog" "$out/bin/$progName" \
-                                  --set-default ROCM_PATH "$out/opt/rocm" \
-                                  --set-default ROCM_HOME "$out/opt/rocm" \
-                                  --set-default HIP_PATH "$out/opt/rocm" \
-                                  --prefix PATH : "$out/opt/rocm/bin" \
-                                  --prefix LD_LIBRARY_PATH : "$out/opt/rocm/lib:$out/opt/rocm/lib64:${gccLibPath}"
-                                ;;
-                            esac
+                            makeWrapper "$prog" "$out/bin/$progName" \
+                              --set-default ROCM_PATH "$out/opt/rocm" \
+                              --set-default ROCM_HOME "$out/opt/rocm" \
+                              --set-default HIP_PATH "$out/opt/rocm" \
+                              --prefix PATH : "$out/opt/rocm/bin" \
+                              --prefix LD_LIBRARY_PATH : "$out/opt/rocm/lib:$out/opt/rocm/lib64:${gccLibPath}"
                           fi
                         done
                       fi
