@@ -12,8 +12,8 @@
     flake-utils,
   }: let
     gpuarch = "gfx1151";
-    version = "7.12.0a20260205";
-    srcHash = "sha256-6pkPZ5vD7Q9oQ3797cwA30y9/GNAku39BQiqko59j7o=";
+    version = "7.12.0a20260225";
+    srcHash = "sha256-PdLoy2eXcfTARktQ9ZLk8TB2SVK/qKFyErF9qldaWck=";
 
     mkRocmNightly = pkgs: let
       inherit (pkgs) lib;
@@ -294,13 +294,13 @@
 
             text, n_version = re.subn(
                 r'(^\s*version\s*=\s*")[^"]*(";)',
-                rf'\1{version}\2',
+                lambda m: f"{m.group(1)}{version}{m.group(2)}",
                 text,
                 flags=re.M,
             )
             text, n_hash = re.subn(
                 r'(^\s*srcHash\s*=\s*")[^"]*(";)',
-                rf'\1{src_hash}\2',
+                lambda m: f"{m.group(1)}{src_hash}{m.group(2)}",
                 text,
                 flags=re.M,
             )
