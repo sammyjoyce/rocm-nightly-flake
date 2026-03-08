@@ -12,8 +12,8 @@
     flake-utils,
   }: let
     gpuarch = "gfx1151";
-    version = "7.12.0a20260225";
-    srcHash = "sha256-PdLoy2eXcfTARktQ9ZLk8TB2SVK/qKFyErF9qldaWck=";
+    version = "7.12.0a20260308";
+    srcHash = "sha256-rUhZSqJaTpuc2l6D1Q29oC0yTcTRRU/NO/JAFxaaVRA=";
 
     mkRocmNightly = pkgs: let
       inherit (pkgs) lib;
