@@ -103,3 +103,72 @@ release with auto-generated notes.
 
 Add it inside the `eachSystem` block (for per-system outputs) or in the `//`
 merge block (for system-independent outputs like overlays and modules).
+
+## Compound engineering learnings
+
+Lessons extracted from recent development threads. Each entry prevents a
+previously encountered mistake from recurring.
+
+### Overlay vs. direct package reference (for consumers)
+
+This flake exposes `overlays.default`. Consumers using the overlay pattern
+(`rocm-nightly.overlays.default`) get the package injected into their `pkgs`
+set, which is ergonomic but can cause evaluation errors if the consumer's
+nixpkgs diverges significantly from ours (hash mismatches, missing
+dependencies). The safer consumer pattern is a direct package reference:
+
+```nix
+# In consumer's module (e.g. inside nix2):
+inputs.rocm-nightly.packages.${pkgs.system}.default
+```
+
+When writing examples in README or docs, show **both** patterns and note the
+trade-off: overlays are convenient, direct references are more robust.
+
+### Nix shell escaping in CI workflows
+
+On NixOS self-hosted runners, `nix develop -c bash -lc '...'` silently breaks
+because the login shell (`-l`) re-initializes `PATH` and wipes the `nix develop`
+environment. Use a non-login shell instead:
+
+```yaml
+# Bad — login shell wipes nix develop PATH
+nix develop -c bash -lc 'some-tool ...'
+
+# Good — non-login shell preserves environment
+nix develop --command bash -euo pipefail -c 'some-tool ...'
+```
+
+This does not affect our current CI (which runs on `ubuntu-latest` with
+`nix flake check`), but matters if we ever add self-hosted runner steps.
+
+### Nix string interpolation for shell arrays
+
+Inside `writeShellApplication` or `writeShellScript` text blocks, shell
+`${var}` is interpolated by Nix. To get a literal shell expansion:
+
+```nix
+# Wrong — Nix tries to interpolate
+"${args[@]}"
+
+# Right — escaped for Nix string context
+"''${args[@]}"
+```
+
+The update script in `flake.nix` already handles this correctly, but keep it in
+mind when adding new shell scripts.
+
+### CI infrastructure noise vs. real failures
+
+When GitHub Actions jobs fail instantly and simultaneously while local
+`nix flake check --no-build` and `nix fmt` pass cleanly, the failures are
+almost always infrastructure noise (runner provisioning, Nix installer hiccups),
+not code regressions. Verify locally first, then re-run the workflow before
+investigating further.
+
+### deadnix catches unused arguments after refactors
+
+When a refactor removes usage of a function argument (e.g., removing a
+`lib.optionals` guard makes `lib` unused in a lambda), `deadnix` will flag it.
+Always run `nix flake check` (which includes the deadnix check) after any
+refactor, even seemingly trivial ones.
