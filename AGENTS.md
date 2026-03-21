@@ -172,3 +172,33 @@ When a refactor removes usage of a function argument (e.g., removing a
 `lib.optionals` guard makes `lib` unused in a lambda), `deadnix` will flag it.
 Always run `nix flake check` (which includes the deadnix check) after any
 refactor, even seemingly trivial ones.
+
+### Git hangs in non-interactive (agent) contexts
+
+On the NixOS host running this repo's self-hosted GitHub runner, `git commit`
+and `git rebase --continue` can hang indefinitely when invoked by agents or
+background processes. The cause is `$EDITOR`/`$VISUAL` pointing to `nvim`,
+which blocks waiting for a TTY that doesn't exist.
+
+**Diagnosis:** If git appears stuck, check `ps aux | grep git` for zombie
+`nvim` processes editing `COMMIT_EDITMSG`.
+
+**Prevention for agents:** Always pass `--no-edit` or set
+`GIT_EDITOR=true` when running git commands non-interactively:
+
+```bash
+# In agent scripts or CI
+GIT_EDITOR=true git rebase --continue
+git commit --no-edit -m "message"
+```
+
+The host now uses a smart editor wrapper that detects TTY and exits cleanly
+in non-interactive contexts, but agents should still be explicit.
+
+### Disable gc.auto for concurrent agent workloads
+
+When multiple agents or GitHub runner jobs operate on repos simultaneously,
+git's opportunistic `gc.auto` causes lock contention (`gc.pid` lock files)
+that manifests as hangs or errors. The host is now configured with
+`gc.auto = 0` and scheduled maintenance via a systemd timer instead. If
+adding new CI steps or agent workflows, never re-enable automatic GC.
