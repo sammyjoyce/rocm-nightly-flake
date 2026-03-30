@@ -202,3 +202,22 @@ git's opportunistic `gc.auto` causes lock contention (`gc.pid` lock files)
 that manifests as hangs or errors. The host is now configured with
 `gc.auto = 0` and scheduled maintenance via a systemd timer instead. If
 adding new CI steps or agent workflows, never re-enable automatic GC.
+
+### Flake eval cache invalidation
+
+Nix caches flake evaluation based on the staged git tree hash. If evaluation
+seems stale after editing `flake.nix`, run `git add flake.nix` to invalidate
+the cache. For persistent staleness, clear the eval cache:
+
+```bash
+rm -rf ~/.cache/nix/eval-cache-v1/
+# or pass inline:
+nix flake check --option eval-cache false
+```
+
+### Compound engineering efficiency gating
+
+Check `git log --oneline --since="24 hours ago"` before searching threads for
+compounding. If no commits exist since the last compound commit, skip thread
+analysis — there is nothing to compound. This prevents no-op cascades of
+empty meta-threads during dormant periods.
